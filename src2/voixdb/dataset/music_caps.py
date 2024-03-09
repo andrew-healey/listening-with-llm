@@ -20,7 +20,7 @@ class MusicCapsDataset(torch.utils.data.Dataset):
     "Characterizes a dataset for PyTorch"
 
     def __init__(self, entries, tokenizer, prompt_template, audio_encoder,embed_tokens,max_length=1000,key=None):
-        self.entries = entries
+        self.entries = sorted(entries,key=lambda entry: entry['file'])
         self.tokenizer = tokenizer
         self.prompt_template = prompt_template
         self.max_length = max_length
@@ -127,8 +127,8 @@ class MusicCapsDataset(torch.utils.data.Dataset):
             dim=0
         )
 
-        audio_tokens_start = len(prompt_embeds)
-        audio_tokens_end = len(prompt_embeds) + n_audio_text_embeds
+        audio_tokens_start = prompt_embeds.shape[1]
+        audio_tokens_end = prompt_embeds.shape[1] + n_audio_text_embeds
         raw_token_length = inputs_embeds_raw.shape[1]
         cap_tokens_start = raw_token_length - cap_embeds.shape[1]
 
@@ -165,7 +165,7 @@ class MusicCapsDataset(torch.utils.data.Dataset):
         # pad/truncate projection inputs
         if n_audio_embeds < audio_max:
             audio_embeds_raw = torch.concat(
-                (audio_embeds_raw,torch.zeros(audio_max-n_audio_embeds,audio_C)), # pad on left - this doesn't actually matter, I remove the padding later
+                (torch.zeros(audio_max-n_audio_embeds,audio_C),audio_embeds_raw), # pad on left - this doesn't actually matter, I remove the padding later
                 dim=0
             )
         else:
