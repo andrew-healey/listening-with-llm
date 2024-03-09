@@ -8,7 +8,7 @@ import torch
 
 from .. import util
 
-ROOT = pl.Path("/media/2nvme/data/MusicCaps/")
+ROOT = pl.Path("")
 
 CSV = ROOT / "musiccaps-public.csv"
 CSV_FILTERED = ROOT / "filtered.csv"
