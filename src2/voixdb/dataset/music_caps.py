@@ -45,6 +45,7 @@ class MusicCapsDataset(torch.utils.data.Dataset):
                 torch.save(self.raw_audio_embeds,filename)
         
         self.raw_sizes = set()
+        self.raw_audio_sizes = set()
 
     def __len__(self):
         return len(self.entries)
@@ -73,14 +74,14 @@ class MusicCapsDataset(torch.utils.data.Dataset):
             truncate=True,
         )
 
-        # print(prompt_attention_mask.shape)
+        n_audio_text_embeds = 250
 
         assert len(prompt_attention_mask.shape) == 2
 
         attention_mask = torch.concat(
             (
                 prompt_attention_mask,
-                torch.ones(1,len(audio_embeds)//4),
+                torch.ones(1,n_audio_text_embeds),
                 end_prompt_attention_mask,
                 cap_attention_mask,
             ),
@@ -92,117 +93,95 @@ class MusicCapsDataset(torch.utils.data.Dataset):
         prompt_embeds = self.embed_tokens(prompt_ids)
         end_prompt_embeds = self.embed_tokens(end_prompt_ids)
 
-        audio_embeds_standin = torch.zeros(len(audio_embeds),prompt_embeds.shape[1])
-
         language_C = prompt_embeds.shape[-1]
         audio_C = audio_embeds.shape[-1]
-
-        # print(prompt_embeds.shape, torch.zeros(1,len(audio_embeds),language_C).shape,end_prompt_embeds.shape)
 
         inputs_embeds_raw = torch.concat(
             (
                 prompt_embeds,
-                torch.zeros(1,len(audio_embeds) // 4,language_C),
+                torch.zeros(1,n_audio_text_embeds,language_C),
                 end_prompt_embeds,
                 cap_embeds,
             ),
             dim=1
         )
 
-        inputs_raw = torch.concat(
+        input_ids_raw = torch.concat(
             (
                 prompt_ids,
-                torch.zeros(1,len(audio_embeds) // 4),
+                torch.zeros(1,n_audio_text_embeds),
                 end_prompt_ids,
                 cap_ids,
             ),
             dim=1
         )
 
-        # print(prompt_embeds.shape,audio_embeds.shape)
+        # treated totally separately
+        n_audio_embeds = len(audio_embeds)
+        audio_max = 2000 # TODO check if this is enough
 
         audio_embeds_raw = torch.concat(
             (
-                torch.zeros(prompt_embeds.shape[1] * 4,audio_C),
                 audio_embeds,
-                torch.zeros(end_prompt_embeds.shape[1] * 4,audio_C),
-                torch.zeros(cap_embeds.shape[1] * 4,audio_C)
             ),
             dim=0
         )
 
-        # print("inputs_embeds_raw",
-        #     (
-        #         prompt_embeds.shape,
-        #         torch.zeros(1,len(audio_embeds) // 4,language_C).shape,
-        #         end_prompt_embeds.shape,
-        #         cap_embeds.shape,
-        #     ),
-        #       )
-
-        # print("audio_embeds_raw",
-        #     (
-        #         torch.zeros(prompt_embeds.shape[1] * 4,audio_C).shape,
-        #         audio_embeds.shape,
-        #         torch.zeros(end_prompt_embeds.shape[1] * 4,audio_C).shape,
-        #         torch.zeros(cap_embeds.shape[1] * 4,audio_C).shape
-        #     ),
-        #     )
-
-        audio_start = len(prompt_embeds)
-        audio_end = len(prompt_embeds) + len(audio_embeds) // 4
-        raw_length = inputs_embeds_raw.shape[1]
-        cap_start = raw_length - cap_embeds.shape[1]
+        audio_tokens_start = len(prompt_embeds)
+        audio_tokens_end = len(prompt_embeds) + n_audio_text_embeds
+        raw_token_length = inputs_embeds_raw.shape[1]
+        cap_tokens_start = raw_token_length - cap_embeds.shape[1]
 
         # pad/truncate both
+        token_pad = max(0,self.max_length - raw_token_length)
 
-        pad = self.max_length - raw_length
+        audio_tokens_start = min(self.max_length,max(0,audio_tokens_start + token_pad))
+        audio_tokens_end = min(self.max_length,max(0,audio_tokens_end + token_pad))
+        assert audio_tokens_end == audio_tokens_start + n_audio_text_embeds, f"Padding bit into the fixed-size audio embed. This is not supported. raw_token_length = {raw_token_length}, audio_tokens_start = {audio_tokens_start}, audio_tokens_end = {audio_tokens_end}. text = '{self.prompt_template()}'+<audio tokens>"
 
-        audio_start = max(0,audio_start + pad)
-        audio_end = max(0,audio_end + pad)
-        cap_start = max(0,cap_start + pad)
+        cap_tokens_start = max(0,cap_tokens_start + token_pad)
 
-        self.raw_sizes.add(len(inputs_embeds_raw))
+        self.raw_sizes.add(inputs_embeds_raw.shape[1])
+        self.raw_audio_sizes.add(n_audio_embeds)
 
-        # print("pre-pad",inputs_embeds_raw.shape,audio_embeds_raw.shape)
-
-        if raw_length < self.max_length:
+        # pad/truncate LLM inputs
+        # pad on the left
+        if raw_token_length < self.max_length:
             inputs_embeds_raw = torch.concat(
-                (torch.zeros(1,pad,inputs_embeds_raw.shape[-1]),inputs_embeds_raw),dim=1
-            )
-            audio_embeds_raw = torch.concat(
-                (torch.zeros(pad*4,audio_embeds_raw.shape[1]),audio_embeds_raw)
+                (torch.zeros(1,token_pad,inputs_embeds_raw.shape[-1]),inputs_embeds_raw),dim=1
             )
             attention_mask = torch.concat(
-                (torch.zeros(1,pad),attention_mask),dim=1
+                (torch.zeros(1,token_pad),attention_mask),dim=1
             )
-            inputs_raw = torch.concat(
-                (torch.zeros(1,pad),inputs_raw),dim=1
+            input_ids_raw = torch.concat(
+                (torch.zeros(1,token_pad),input_ids_raw),dim=1
             )
-
-            audio_start += pad
-            audio_end += pad
-
-            # print("post-pad",inputs_embeds_raw.shape,audio_embeds_raw.shape)
-        elif raw_length > self.max_length:
-            inputs_embeds_raw = inputs_embeds_raw[:,-self.max_length:]
-            inputs_raw = inputs_raw[:,-self.max_length:]
-            audio_embeds_raw = audio_embeds_raw[-self.max_length*4:]
-            attention_mask = attention_mask[:,-self.max_length:]
-            # print("post-truncate",inputs_embeds_raw.shape,audio_embeds_raw.shape)
+        # overflow on the right
+        elif raw_token_length > self.max_length:
+            inputs_embeds_raw = inputs_embeds_raw[:,:self.max_length]
+            input_ids_raw = input_ids_raw[:,:self.max_length]
+            attention_mask = attention_mask[:,:self.max_length]
+        
+        # pad/truncate projection inputs
+        if n_audio_embeds < audio_max:
+            audio_embeds_raw = torch.concat(
+                (audio_embeds_raw,torch.zeros(audio_max-n_audio_embeds,audio_C)), # pad on left - this doesn't actually matter, I remove the padding later
+                dim=0
+            )
+        else:
+            audio_embeds_raw = audio_embeds_raw[:audio_max] # truncate on the right - this does matter.
 
         ret = {
             "attention_mask": attention_mask.squeeze(0),
-            "inputs_embeds_raw": inputs_embeds_raw.squeeze(0),
-            "inputs_raw": inputs_raw.squeeze(0),
+            "input_embeds_raw": inputs_embeds_raw.squeeze(0),
+            "input_ids_raw": input_ids_raw.squeeze(0),
             "audio_embeds_raw": audio_embeds_raw,
-            "audio_start":torch.tensor(audio_start),
-            "audio_end":torch.tensor(audio_end),
-            "cap_start":torch.tensor(cap_start),
+            "audio_tokens_start":torch.tensor(audio_tokens_start),
+            "audio_tokens_end":torch.tensor(audio_tokens_end),
+            "cap_tokens_start":torch.tensor(cap_tokens_start),
+            "n_audio_embeds":torch.tensor(n_audio_embeds),
         }
 
-        # print("ret",{k:v.shape for k,v in ret.items()})
-        # raise 1
         return ret
 
 
