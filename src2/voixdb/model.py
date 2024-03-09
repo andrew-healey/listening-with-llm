@@ -12,11 +12,11 @@ from transformers import (
 
 NVME2 = pl.Path("/media/2nvme")
 
-MODEL_DIR = NVME2 / "models" / "whisper-large-v3"
-WHISPER_MODEL_FILE = MODEL_DIR / "large-v3.pt"
-WHISPER_AUDIO_BIN = "/media/2nvme/proc/voixdb/frozen/audio_encoder.statedict"
+# MODEL_DIR = NVME2 / "models" / "whisper-large-v3"
+# WHISPER_MODEL_FILE = MODEL_DIR / "large-v3.pt"
+# WHISPER_AUDIO_BIN = "/media/2nvme/proc/voixdb/frozen/audio_encoder.statedict"
 
-ORCA = "/media/2nvme/llm/Mistral-7B-OpenOrca"
+ORCA = "Open-Orca/Mistral-7B-OpenOrca"
 # HERMES = "/media/2nvme/llm/OpenHermes-2.5-Mistral-7B"
 # Loads and works with bnb but outputs gibberish
 # QWEN = "/media/2nvme/llm/Qwen-7B-Chat"
@@ -167,10 +167,8 @@ def load_whisper_v3_audio_encoder(
     n_audio_head=20,
     n_audio_layer=32,
 ):
-    m = whisper.model.AudioEncoder(
-        n_mels, n_audio_ctx, n_audio_state, n_audio_head, n_audio_layer
-    )
-    m.load_state_dict(torch.load(WHISPER_AUDIO_BIN))
+
+    m = whisper.load_model("large-v3").encoder
     return m
 
 
