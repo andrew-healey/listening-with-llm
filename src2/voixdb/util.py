@@ -40,7 +40,7 @@ def text_2_ids_and_attention_mask(tokenizer, input_txt, truncate=False):
 
 @torch.no_grad()
 def sample_with_audio(
-    model, tokenizer, prompt, audio_file, device="cuda:0", iteration=50
+    model, llm, tokenizer, prompt, audio_file, device="cuda:0", iteration=50
 ):
     audio_mels = load_audio_mels(audio_file).to(device).half()
     end_prompt_ids, end_prompt_attention_mask = text_2_ids_and_attention_mask(
@@ -86,13 +86,13 @@ def sample_with_audio(
             )
 
             if prompt_embeds is None:
-                prompt_embeds = model.llm.model.embed_tokens(prompt_ids)
+                prompt_embeds = llm.model.embed_tokens(prompt_ids)
             if end_prompt_embeds is None:
-                end_prompt_embeds = model.llm.model.embed_tokens(end_prompt_ids)
+                end_prompt_embeds = llm.model.embed_tokens(end_prompt_ids)
 
             sampled_ids_embeds = None
             if sampled_ids is not None:
-                sampled_ids_embeds = model.llm.model.embed_tokens(sampled_ids)
+                sampled_ids_embeds = llm.model.embed_tokens(sampled_ids)
 
             embeds_concat_args = [
                 prompt_embeds,
