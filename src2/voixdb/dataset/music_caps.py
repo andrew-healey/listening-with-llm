@@ -172,6 +172,7 @@ class MusicCapsDataset(torch.utils.data.Dataset):
             audio_embeds_raw = audio_embeds_raw[:audio_max] # truncate on the right - this does matter.
 
         ret = {
+            "_id": [str(entry["file"])],
             "attention_mask": attention_mask.squeeze(0),
             "input_embeds_raw": inputs_embeds_raw.squeeze(0),
             "input_ids_raw": input_ids_raw.squeeze(0),
