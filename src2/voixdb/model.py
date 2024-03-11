@@ -98,7 +98,7 @@ class Model(nn.Module):
 
 
 class TunableWhisperAudioEncoder(nn.Module):
-    def __init__(self, *, audio_encoder=None, output_embedding_size=4096):
+    def __init__(self, *, audio_encoder=None, output_embedding_size=4096,**kwargs):
         """
         args
             output_embedding_size: int = 4096 / mistral default embedding size
@@ -109,7 +109,7 @@ class TunableWhisperAudioEncoder(nn.Module):
             audio_encoder = load_whisper_v3_audio_encoder()
 
         self.audio_encoder = audio_encoder
-        self.proj = TrainableSubmodule(output_embedding_size=output_embedding_size)
+        self.proj = TrainableSubmodule(output_embedding_size=output_embedding_size,**kwargs)
 
         # # Freeze all parameters
         # # TODO apply LoRA on this encoder
@@ -123,7 +123,7 @@ class TunableWhisperAudioEncoder(nn.Module):
 
 
 class TrainableSubmodule(nn.Module):
-    def __init__(self, output_embedding_size):
+    def __init__(self, output_embedding_size,lora_r=128,lora_alpha=256,dropout=0.2,use_lora=False):
         super().__init__()
 
         # TODO: init from BERT
@@ -133,6 +133,17 @@ class TrainableSubmodule(nn.Module):
         # self.cnn3 = nn.Conv1d(640, 1280, 3, stride=2, dilation=2, bias=False)
         self.pool = nn.AdaptiveAvgPool1d(250)
         self.proj = nn.Linear(1280, output_embedding_size, bias=False)
+
+        self.lora_1 = nn.Linear(1280,lora_r)
+        self.dropout = nn.Dropout(dropout)
+        self.lora_2 = nn.Linear(lora_r,output_embedding_size)
+
+        self.use_lora = use_lora
+
+        with torch.no_grad():
+            self.lora_1.weight.data *= lora_alpha / lora_r
+            self.lora_2.weight.data *= lora_alpha / lora_r
+
         self.ln1 = nn.LayerNorm(1280)
         # self.ln2 = nn.LayerNorm(640)
         # self.ln2 = nn.LayerNorm(1280)
@@ -155,7 +166,12 @@ class TrainableSubmodule(nn.Module):
         # res = self.ln3(res.transpose(-2, -1))
         res = audio_embeds
         res = self.pool(res.transpose(-2, -1))
-        res = self.proj(self.ln1(res.transpose(-2, -1)))
+        res = self.ln1(res.transpose(-2, -1))
+        if self.use_lora:
+            res = self.dropout(self.lora_1(res))
+            res = self.lora_2(res)
+        else:
+            res = self.proj(res)
         return res
 
 
@@ -171,6 +187,11 @@ def load_whisper_v3_audio_encoder(
     m = whisper.load_model("large-v3").encoder
     return m
 
+"""
+from transformers import AutoModelForCausalLM,BitsAndBytesConfig; import torch
+bnb_config = BitsAndBytesConfig( load_in_4bit=True, bnb_4bit_compute_dtype=torch.bfloat16, bnb_4bit_compute_type=torch.bfloat16, bnb_4bit_quant_type="nf4",)
+model = AutoModelForCausalLM.from_pretrained( "Open-Orca/Mistral-7B-OpenOrca", device_map="auto", trust_remote_code=False, use_safetensors=True, quantization_config=bnb_config, attention_dropout=0.2,)
+"""
 
 def load_llm():
     bnb_config = BitsAndBytesConfig(
