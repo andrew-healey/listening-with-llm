@@ -189,12 +189,15 @@ def load_llm():
         use_fast=False,
     )
 
+    print("loading from pretrained")
     model = AutoModelForCausalLM.from_pretrained(
         MODEL,
         device_map="auto",
         trust_remote_code=False,
         use_safetensors=True,
         quantization_config=bnb_config,
+        attention_dropout=0.2,
     )
+    print("loaded from pretrained")
 
     return tokenizer, model
