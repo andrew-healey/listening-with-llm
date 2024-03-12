@@ -123,7 +123,7 @@ class TunableWhisperAudioEncoder(nn.Module):
 
 
 class TrainableSubmodule(nn.Module):
-    def __init__(self, output_embedding_size,lora_r=128,lora_alpha=256,dropout=0.2,use_lora=False):
+    def __init__(self, output_embedding_size,lora_r=128,lora_alpha=256,dropout=0.05,use_lora=False):
         super().__init__()
 
         # TODO: init from BERT
@@ -134,11 +134,14 @@ class TrainableSubmodule(nn.Module):
         self.pool = nn.AdaptiveAvgPool1d(250)
         self.proj = nn.Linear(1280, output_embedding_size, bias=False)
 
+        self.register_buffer('use_lora', torch.tensor(use_lora, dtype=torch.bool))
+        self.register_buffer('lora_r', torch.tensor(lora_r, dtype=torch.int))
+        self.register_buffer('lora_alpha', torch.tensor(lora_alpha, dtype=torch.int))
+        self.register_buffer('dropout', torch.tensor(dropout, dtype=torch.float))
+
         self.lora_1 = nn.Linear(1280,lora_r)
         self.dropout = nn.Dropout(dropout)
         self.lora_2 = nn.Linear(lora_r,output_embedding_size)
-
-        self.use_lora = use_lora
 
         with torch.no_grad():
             self.lora_1.weight.data *= lora_alpha / lora_r
